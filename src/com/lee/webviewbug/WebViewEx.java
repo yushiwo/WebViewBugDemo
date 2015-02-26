@@ -22,6 +22,7 @@ import android.webkit.WebViewClient;
 
 /**
  * 这个类解析了Android 4.0以下的WebView注入Javascript对象引发的安全漏洞。
+ * 重载了addJavascriptInterface方法，如果版本>=4.2，则直接使用原有的方法。如果版本<4.2，则使用map缓存待注入对象
  * 
  * @author LiHong
  * @since 2013-9-30
@@ -45,7 +46,14 @@ public class WebViewEx extends WebView {
         "wait",
     };
     
+    /**
+     * 缓存addJavascriptInterface的注册对象
+     */
     private HashMap<String, Object> mJsInterfaceMap = new HashMap<String, Object>();
+    
+    /**
+     * 缓存注入到JavaScript Context的js脚本
+     */
     private String mJsStringCache = null;
     
     public WebViewEx(Context context, AttributeSet attrs, int defStyle) {
@@ -76,6 +84,9 @@ public class WebViewEx extends WebView {
         removeSearchBoxImpl();
     }
     
+    /**
+     * 如果版本>=4.2，则直接基类的addJavascriptInterface。如果版本<4.2，则使用map缓存待注入对象
+     */
     @Override
     public void addJavascriptInterface(Object obj, String interfaceName) {
         if (TextUtils.isEmpty(interfaceName)) {
@@ -90,6 +101,9 @@ public class WebViewEx extends WebView {
         }
     }
     
+    /**
+     * 删除待注入对象，如果版本>=4.2，则使用父类的removeJavascriptInterface。如果版本 < 4.2，则从缓存map中删除注入对象
+     */
     @SuppressLint("NewApi") 
     public void removeJavascriptInterface(String interfaceName) {
         if (hasJellyBeanMR1()) {
@@ -101,6 +115,11 @@ public class WebViewEx extends WebView {
         }
     }
     
+    /**
+     * [SDK 3.0(API 11), SDK 4.2(API 17))之间的版本需要移除searchBoxJavaBridge_对象
+     * 
+     * @return
+     */
     @SuppressLint("NewApi") 
     private boolean removeSearchBoxImpl() {
         if (hasHoneycomb() && !hasJellyBeanMR1()) {
@@ -112,7 +131,7 @@ public class WebViewEx extends WebView {
     }
     
     /**
-     * 注入JS
+     * 向JavaScript Context注入对象，一般不直接调用此方法，而是调用{@link #injectJavascriptInterfaces(WebView)}
      */
     private void injectJavascriptInterfaces() {
         if (!TextUtils.isEmpty(mJsStringCache)) {
@@ -126,8 +145,7 @@ public class WebViewEx extends WebView {
     }
     
     /**
-     * 注入JS 
-     * @param webView
+     * 如果webView是WebViewEx类型，则向JavaScript Context注入对象（确保webview是有安全机制的）
      */
     private void injectJavascriptInterfaces(WebView webView) {
         if (webView instanceof WebViewEx) {
@@ -136,14 +154,14 @@ public class WebViewEx extends WebView {
     }
     
     /**
-     * 注入JS 
+     * 使用loadUrl方法向JavaScript Context注入java对象
      */
     private void loadJavascriptInterfaces() {
         this.loadUrl(mJsStringCache);
     }
     
     /**
-     * 生成注入的JS字符串 
+     * 根据缓存的待注入java对象，生成映射的JavaScript代码，也就是桥梁
      * @return
      */
     private String genJavascriptInterfacesString() {
@@ -175,13 +193,13 @@ public class WebViewEx extends WebView {
         StringBuilder script = new StringBuilder();
         script.append("javascript:(function JsAddJavascriptInterface_(){");
         
-        // Add methods
+        // 遍历待注入java对象，生成相应的js对象
         try {
             while (iterator.hasNext()) {
                 Entry<String, Object> entry = iterator.next();
                 String interfaceName = entry.getKey();
                 Object obj = entry.getValue();
-                
+                // 生成相应的js方法
                 createJsMethod(interfaceName, obj, script);
             }
         } catch (Exception e) {
@@ -195,10 +213,11 @@ public class WebViewEx extends WebView {
     }
     
     /**
-     * 生成JS方法（object类的方法被过滤掉） 
-     * @param interfaceName
-     * @param obj
-     * @param script
+     * 根据待注入的java对象，生成js对象
+     * 
+     * @param interfaceName 对象名 
+     * @param obj 待注入的java对象
+     * @param script js代码
      */
     private void createJsMethod(String interfaceName, Object obj, StringBuilder script) {
         if (TextUtils.isEmpty(interfaceName) || (null == obj) || (null == script)) {
@@ -215,7 +234,7 @@ public class WebViewEx extends WebView {
         script.append("}else {");
         script.append("    window.").append(interfaceName).append("={");
         
-        // Add methods
+        // 通过反射机制，添加java对象的方法
         Method[] methods = objClass.getMethods();
         for (Method method : methods) {
             String methodName = method.getName();
@@ -317,11 +336,14 @@ public class WebViewEx extends WebView {
     }
     
     /**
-     * 执行JsInterface的方法
+     * 利用反射，调用java对象的方法。
+     * 
+     * 从缓存中取出key=interfaceName的java对象，并调用其methodName方法
+     * 
      * @param result
-     * @param interfaceName
-     * @param methodName
-     * @param args
+     * @param interfaceName 对象名
+     * @param methodName 方法名
+     * @param args 参数列表
      * @return
      */
     private boolean invokeJSInterfaceMethod(JsPromptResult result, String interfaceName, String methodName, Object[] args) {
@@ -364,7 +386,8 @@ public class WebViewEx extends WebView {
     }
     
     /**
-     * 获取对象的类型
+     * 解析出参数类型
+     * 
      * @param obj
      * @return
      */
@@ -384,8 +407,8 @@ public class WebViewEx extends WebView {
     }
     
     /**
-     * 过滤方法
-     * @param methodName 待检测的方法
+     * 检查是否是被过滤的方法
+     * @param methodName
      * @return
      */
     private boolean filterMethods(String methodName) {
@@ -399,7 +422,7 @@ public class WebViewEx extends WebView {
     }
     
     /**
-     * SDK版本是否大于11
+     * 检查SDK版本是否 >= 3.0 (API 11)
      * @return
      */
     private boolean hasHoneycomb() {
@@ -407,7 +430,7 @@ public class WebViewEx extends WebView {
     }
     
     /**
-     * 系统版本是否4.2以上
+     * 检查SDK版本是否 >= 4.2 (API 17)
      * @return
      */
     private boolean hasJellyBeanMR1() {
