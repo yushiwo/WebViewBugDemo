@@ -15,6 +15,7 @@ import android.graphics.Bitmap;
 import android.os.Build;
 import android.text.TextUtils;
 import android.util.AttributeSet;
+import android.util.Log;
 import android.webkit.JsPromptResult;
 import android.webkit.WebChromeClient;
 import android.webkit.WebView;
@@ -32,8 +33,11 @@ public class WebViewEx extends WebView {
     private static final boolean DEBUG = true;
     private static final String VAR_ARG_PREFIX = "arg";
     private static final String MSG_PROMPT_HEADER = "MyApp:";
+    /** 对象名 */
     private static final String KEY_INTERFACE_NAME = "obj";
+    /** 函数名 */
     private static final String KEY_FUNCTION_NAME = "func";
+    /** 参数数组 */
     private static final String KEY_ARG_ARRAY = "args";
     /** 要过滤的方法数组 */
     private static final String[] mFilterMethods = {
@@ -141,6 +145,7 @@ public class WebViewEx extends WebView {
         
         String jsString = genJavascriptInterfacesString();
         mJsStringCache = jsString;
+        Log.e("leehong2", "mJsStringCache = " + mJsStringCache);
         loadJavascriptInterfaces();
     }
     
@@ -161,10 +166,11 @@ public class WebViewEx extends WebView {
     }
     
     /**
-     * 根据缓存的待注入java对象，生成映射的JavaScript代码，也就是桥梁
+     * 根据缓存的待注入java对象，生成映射的JavaScript代码，也就是桥梁(SDK4.2之前通过反射生成)
      * @return
      */
     private String genJavascriptInterfacesString() {
+    	Log.e("leehong2", "genJavascriptInterfacesString");
         if (mJsInterfaceMap.size() == 0) {
             mJsStringCache = null;
             return null;
@@ -208,12 +214,12 @@ public class WebViewEx extends WebView {
         
         // End
         script.append("})()");
-        
+        Log.e("leehong2", "script.toString() = " + script.toString());
         return script.toString();
     }
     
     /**
-     * 根据待注入的java对象，生成js对象
+     * 根据待注入的java对象，生成js方法
      * 
      * @param interfaceName 对象名 
      * @param obj 待注入的java对象
@@ -292,15 +298,17 @@ public class WebViewEx extends WebView {
     }
     
     /**
-     * 在Java中处理js
+     * 解析JavaScript调用prompt的参数message，提取出对象名、方法名，以及参数列表，再利用反射，调用java对象的方法。
+     * 
      * @param view
      * @param url
-     * @param message
+     * @param message  MyApp:{"obj":"jsInterface","func":"onButtonClick","args":["从JS中传递过来的文本！！！"]}
      * @param defaultValue
      * @param result
      * @return
      */
     private boolean handleJsInterface(WebView view, String url, String message, String defaultValue, JsPromptResult result) {
+    	Log.e("leehong2", "Js prompt message = " + message);
         String prefix = MSG_PROMPT_HEADER;
         if (!message.startsWith(prefix)) {
             return false;
@@ -309,8 +317,11 @@ public class WebViewEx extends WebView {
         String jsonStr = message.substring(prefix.length());
         try {
             JSONObject jsonObj = new JSONObject(jsonStr);
+            // 对象名称
             String interfaceName = jsonObj.getString(KEY_INTERFACE_NAME);
+            // 方法名称
             String methodName = jsonObj.getString(KEY_FUNCTION_NAME);
+            // 参数数组 
             JSONArray argsArray = jsonObj.getJSONArray(KEY_ARG_ARRAY);
             Object[] args = null;
             if (null != argsArray) {
@@ -440,7 +451,7 @@ public class WebViewEx extends WebView {
     private class WebChromeClientEx extends WebChromeClient {
         @Override
         public final void onProgressChanged(WebView view, int newProgress) {
-            injectJavascriptInterfaces(view);
+            //injectJavascriptInterfaces(view);
             super.onProgressChanged(view, newProgress);
         }
         
@@ -457,26 +468,26 @@ public class WebViewEx extends WebView {
         
         @Override
         public final void onReceivedTitle(WebView view, String title) {
-            injectJavascriptInterfaces(view);
+            //injectJavascriptInterfaces(view);
         }
     }
     
     private class WebViewClientEx extends WebViewClient {
         @Override
         public void onLoadResource(WebView view, String url) {
-            injectJavascriptInterfaces(view);
+            //injectJavascriptInterfaces(view);
             super.onLoadResource(view, url);
         }
 
         @Override
         public void doUpdateVisitedHistory(WebView view, String url, boolean isReload) {
-            injectJavascriptInterfaces(view);
+            //injectJavascriptInterfaces(view);
             super.doUpdateVisitedHistory(view, url, isReload);
         }
 
         @Override
         public void onPageStarted(WebView view, String url, Bitmap favicon) {
-            injectJavascriptInterfaces(view);
+            //injectJavascriptInterfaces(view);
             super.onPageStarted(view, url, favicon);
         }
 
